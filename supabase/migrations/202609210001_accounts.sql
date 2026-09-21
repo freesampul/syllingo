@@ -79,11 +79,14 @@ create table public.ai_daily_usage (
 );
 
 -- Only authenticated members can read course material. Personal records are private.
-create function public.is_course_member(p_course uuid) returns boolean language sql stable security definer set search_path='' as $$
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated;
+create function private.is_course_member(p_course uuid) returns boolean language sql stable security definer set search_path='' as $$
  select exists(select 1 from public.course_memberships where course_id=p_course and user_id=(select auth.uid()));
 $$;
-revoke all on function public.is_course_member(uuid) from public,anon;
-grant execute on function public.is_course_member(uuid) to authenticated;
+revoke all on function private.is_course_member(uuid) from public,anon;
+grant execute on function private.is_course_member(uuid) to authenticated;
 do $$ declare t text; begin
  foreach t in array array['profiles','courses','course_memberships','course_units','learning_items','study_settings','item_progress','review_events','practice_exercises','practice_attempts','ai_daily_usage'] loop
  execute format('alter table public.%I enable row level security',t);
@@ -94,25 +97,25 @@ end $$;
 grant select on public.profiles,public.courses,public.course_memberships,public.course_units,public.learning_items,public.study_settings,public.item_progress,public.review_events,public.practice_exercises,public.practice_attempts to authenticated;
 create policy own_profile on public.profiles for select to authenticated using(id=(select auth.uid()));
 create policy own_membership on public.course_memberships for select to authenticated using(user_id=(select auth.uid()));
-create policy member_course on public.courses for select to authenticated using(public.is_course_member(id));
-create policy member_units on public.course_units for select to authenticated using(public.is_course_member(course_id));
-create policy member_items on public.learning_items for select to authenticated using(public.is_course_member(course_id));
+create policy member_course on public.courses for select to authenticated using(private.is_course_member(id));
+create policy member_units on public.course_units for select to authenticated using(private.is_course_member(course_id));
+create policy member_items on public.learning_items for select to authenticated using(private.is_course_member(course_id));
 do $$ declare t text; begin
  foreach t in array array['study_settings','item_progress','review_events','practice_exercises','practice_attempts'] loop
- execute format('create policy own_records on public.%I for select to authenticated using (user_id=(select auth.uid()) and public.is_course_member(course_id))',t);
+ execute format('create policy own_records on public.%I for select to authenticated using (user_id=(select auth.uid()) and private.is_course_member(course_id))',t);
  end loop;
 end $$;
 
 -- Privileged mutations are only callable by the app backend after auth.getUser().
-create function public.join_hiyaku_course(p_user uuid) returns boolean language plpgsql security definer set search_path='' as $$
+create function public.join_hiyaku_course(p_user uuid,p_name text default 'Student') returns boolean language plpgsql security invoker set search_path='' as $$
 declare c constant uuid := '9a684d50-2772-43bf-9a5b-1d7e0a399153'; begin
  if not exists(select 1 from public.courses where id=c and enrollment_open) then return false; end if;
- insert into public.profiles(id,display_name) select id,coalesce(raw_user_meta_data->>'full_name','Student') from auth.users where id=p_user on conflict(id) do nothing;
+ insert into public.profiles(id,display_name) values(p_user,left(coalesce(p_name,'Student'),120)) on conflict(id) do nothing;
  insert into public.course_memberships(course_id,user_id) values(c,p_user) on conflict do nothing;
  insert into public.study_settings(course_id,user_id) values(c,p_user) on conflict do nothing;
  return true;
 end $$;
-create function public.reserve_ai_usage(p_user uuid,p_course uuid,p_units integer) returns boolean language plpgsql security definer set search_path='' as $$
+create function public.reserve_ai_usage(p_user uuid,p_course uuid,p_units integer) returns boolean language plpgsql security invoker set search_path='' as $$
 declare d date := (now() at time zone 'UTC')::date; total integer; personal integer; begin
  if p_units not between 1 and 4 or not exists(select 1 from public.course_memberships where course_id=p_course and user_id=p_user) then return false; end if;
  -- One global lock prevents races between requests and between per-user/global limits.
@@ -125,7 +128,7 @@ declare d date := (now() at time zone 'UTC')::date; total integer; personal inte
  return true;
 end $$;
 create function public.record_review(p_event uuid,p_user uuid,p_course uuid,p_item text,p_skill text,p_rating text,p_answer text)
- returns jsonb language plpgsql security definer set search_path='' as $$
+ returns jsonb language plpgsql security invoker set search_path='' as $$
 declare old public.item_progress; event public.review_events; item jsonb; days integer; due timestamptz; result jsonb; begin
  if p_skill not in ('recognition','production') or p_rating not in ('again','hard','good') or length(p_answer)>2000 then raise exception 'Invalid review'; end if;
  if not exists(select 1 from public.course_memberships where course_id=p_course and user_id=p_user) then raise exception 'Not a course member'; end if;
@@ -157,11 +160,11 @@ create function public.practice_summary(p_course uuid) returns jsonb language sq
  'activeDays',(select count(distinct (created_at at time zone 'UTC')::date) from (select created_at from public.review_events where course_id=p_course union all select created_at from public.practice_attempts where course_id=p_course and status='complete') activity)
  );
 $$;
-revoke all on function public.join_hiyaku_course(uuid),public.reserve_ai_usage(uuid,uuid,integer),public.record_review(uuid,uuid,uuid,text,text,text,text) from public,anon,authenticated;
-grant execute on function public.join_hiyaku_course(uuid),public.reserve_ai_usage(uuid,uuid,integer),public.record_review(uuid,uuid,uuid,text,text,text,text) to service_role;
+revoke all on function public.join_hiyaku_course(uuid,text),public.reserve_ai_usage(uuid,uuid,integer),public.record_review(uuid,uuid,uuid,text,text,text,text) from public,anon,authenticated;
+grant execute on function public.join_hiyaku_course(uuid,text),public.reserve_ai_usage(uuid,uuid,integer),public.record_review(uuid,uuid,uuid,text,text,text,text) to service_role;
 revoke all on function public.practice_summary(uuid) from public,anon;
 grant execute on function public.practice_summary(uuid) to authenticated;
-create function public.save_course_items(p_course uuid,p_items jsonb) returns void language plpgsql security definer set search_path='' as $$
+create function public.save_course_items(p_course uuid,p_items jsonb) returns void language plpgsql security invoker set search_path='' as $$
 declare item jsonb; begin
  for item in select value from jsonb_array_elements(p_items) loop
  insert into public.course_units(course_id,id,title,position) values(p_course,item->>'lesson',item->>'lesson',1000) on conflict do nothing;

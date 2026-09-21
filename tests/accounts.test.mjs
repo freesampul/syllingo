@@ -12,7 +12,9 @@ test('Postgres migration, account isolation, role restrictions, and atomic revie
  await db.query("insert into courses(id,slug,title,language_code) values($1,'hiyaku-1','Class','ja')",[C]);
  assert.equal((await db.query('select join_hiyaku_course($1) as ok',[A])).rows[0].ok,false,'closed course rejects enrollment');
  await db.query('update courses set enrollment_open=true where id=$1',[C]);
+ await db.exec('set role service_role');
  await db.query('select join_hiyaku_course($1),join_hiyaku_course($2)',[A,B]);
+ await db.exec('reset role');
  await db.query("update course_memberships set role='owner' where user_id=$1",[A]);
  await db.query('select save_course_items($1,$2)',[C,JSON.stringify([{id:'word',lesson:'1',kind:'vocabulary',term:'祭り',definition:'festival',reading:'まつり',source:'Class',notes:'',forms:''}])]);
  const event='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
