@@ -1,0 +1,3 @@
+import {authClient,accountFailure} from '@/lib/auth';
+import {appOrigin} from '@/lib/account-config';
+export async function GET(r:Request){let origin:string;try{origin=appOrigin();}catch(e){return accountFailure(e);}try{const code=new URL(r.url).searchParams.get('code');if(code){const client=await authClient();const {error}=await client.auth.exchangeCodeForSession(code);if(!error)return new Response(null,{status:303,headers:{Location:origin+'/','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}}catch{/* Do not log OAuth codes or tokens. */}return new Response(null,{status:303,headers:{Location:origin+'/?auth_error=callback','Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});}
