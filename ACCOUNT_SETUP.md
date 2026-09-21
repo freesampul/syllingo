@@ -1,5 +1,11 @@
 # Accounts rollout
 
+## Current remote setup
+
+A dedicated Free-plan project **Hiyaku Study** was created in the existing organization on September 21, 2026. Project reference: `rmvajfhgdmzoxiuoazmd`. API URL: `https://rmvajfhgdmzoxiuoazmd.supabase.co`. Dashboard: https://supabase.com/dashboard/project/rmvajfhgdmzoxiuoazmd
+
+Automatic RLS is enabled and automatic table exposure is disabled. The migration and seed have **not** been applied yet: dashboard sign-in was interrupted by `ERR_NETWORK_CHANGED`. Google provider setup and app environment configuration are still pending. Reuse this project rather than creating another.
+
 The app now uses Supabase Auth (Google OAuth, PKCE, HTTP-only cookies) and Postgres for account data. All personal and AI endpoints require a verified Supabase user and a course membership. Only the current Japanese class is exposed. The database uses course-scoped keys so future courses do not require a rewrite.
 
 ## Connect a Supabase project
