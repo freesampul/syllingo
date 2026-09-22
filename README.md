@@ -2,6 +2,8 @@
 
 Language practice built around what your class has actually covered.
 
+Live app: https://syllingo.com
+
 The first pilot supports Hiyaku Chapter 1 and Genki I–II: a searchable study library, flashcard review, English/Japanese sentence translation, and feedback scoped to selected vocabulary and grammar. Students sign in with Google and keep individual practice histories. Listening is planned.
 
 ## Architecture
