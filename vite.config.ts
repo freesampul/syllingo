@@ -35,6 +35,7 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async () => {
+  const independentHosting = process.env.SYLLINGO_HOST === 'cloudflare';
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -51,10 +52,21 @@ export default defineConfig(async () => {
       : undefined,
     plugins: [
       vinext(),
-      sites(),
+      ...(independentHosting ? [] : [sites()]),
       cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
-        config: localBindingConfig,
+        config: independentHosting ? {
+          name: 'syllingo',
+          main: 'vinext/server/fetch-handler',
+          compatibility_date: '2026-09-22',
+          compatibility_flags: ['nodejs_compat'],
+          workers_dev: true,
+          routes: [{ pattern: 'syllingo.com', custom_domain: true }],
+          vars: {
+            APP_ORIGIN: 'https://syllingo.com',
+            OPENAI_MODEL: 'gpt-5.4-mini',
+          },
+        } : localBindingConfig,
       }),
     ],
   };
