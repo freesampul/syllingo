@@ -8,6 +8,7 @@ test('Postgres migration, account isolation, role restrictions, and atomic revie
  try{
  await db.exec(`create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users(id uuid primary key,raw_user_meta_data jsonb default '{}'); create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$; grant usage on schema public,auth to anon,authenticated,service_role; grant execute on function auth.uid() to anon,authenticated,service_role;`);
  await db.exec(readFileSync(new URL('../supabase/migrations/202609210001_accounts.sql',import.meta.url),'utf8'));
+ await db.exec(readFileSync(new URL('../supabase/migrations/20260923232054_sentence_complexity.sql',import.meta.url),'utf8'));
  await db.query('insert into auth.users(id) values($1),($2)',[A,B]);
  await db.query("insert into courses(id,slug,title,language_code) values($1,'hiyaku-1','Class','ja')",[C]);
  assert.equal((await db.query('select join_hiyaku_course($1) as ok',[A])).rows[0].ok,false,'closed course rejects enrollment');
@@ -15,6 +16,10 @@ test('Postgres migration, account isolation, role restrictions, and atomic revie
  await db.exec('set role service_role');
  await db.query('select join_hiyaku_course($1),join_hiyaku_course($2)',[A,B]);
  await db.exec('reset role');
+ assert.equal((await db.query('select complexity from study_settings where user_id=$1',[A])).rows[0].complexity,'focused');
+ await db.query("update study_settings set complexity='worksheet' where user_id=$1",[A]);
+ assert.equal((await db.query('select complexity from study_settings where user_id=$1',[A])).rows[0].complexity,'worksheet');
+ await assert.rejects(db.query("update study_settings set complexity='invalid' where user_id=$1",[A]));
  await db.query("update course_memberships set role='owner' where user_id=$1",[A]);
  await db.query('select save_course_items($1,$2)',[C,JSON.stringify([{id:'word',lesson:'1',kind:'vocabulary',term:'祭り',definition:'festival',reading:'まつり',source:'Class',notes:'',forms:''}])]);
  const event='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
